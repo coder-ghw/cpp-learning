@@ -1,4 +1,5 @@
 #include <chrono>
+#include <condition_variable>
 #include <iostream>
 #include <mutex>
 #include <thread>
@@ -75,19 +76,84 @@ void test_race_conditions() {
   std::cout << "var b=" << b << std::endl;
 }
 
-void test_condition_var() {
-  ;
-  ;
+typedef void (*callback_func)(int *);
+class TestDeviceStatus {
+public:
+  TestDeviceStatus() {
+    std::unique_lock<std::mutex> guard(my_mutex);
+    my_status = 0;
+  }
+  virtual ~TestDeviceStatus() {}
+
+private:
+  std::mutex my_mutex;
+  int my_status = 0;
+  callback_func my_func = NULL;
+
+public:
+  void registration(void func(int *), int *out_status) {
+    std::cout << "1.注册设备状态检查..." << std::endl;
+    my_func = func;
+    auto getstatus = []() -> int { return -1; };
+    std::thread check_device_status(
+        [&](int *out_status) {
+          std::cout << "2.开启子线程循环检查设备状态中..." << std::endl;
+          while (true) {
+            std::this_thread::sleep_for(std::chrono::seconds(3));
+            std::unique_lock<std::mutex> guard(my_mutex);
+            *out_status = getstatus();
+            if (*out_status != 0)
+              my_func(out_status);
+          };
+        },
+        out_status);
+    check_device_status.detach();
+  }
+};
+
+void test_device_status() {
+  TestDeviceStatus test_device;
+  int status = 0;
+
+  auto func = [](int *status) -> void {
+    std::cout << "检测到设备异常 status=" << *status << std::endl;
+  };
+
+  test_device.registration(func, &status);
+  std::cout << "do some thing else\n";
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+}
+
+#include <future>
+#include <vector>
+
+void test_future() {
+  auto initiazer = [](std::promise<std::vector<int>> *promObj) {
+    std::vector<int> data;
+    std::cout << "Inside Thread" << std::endl;
+    for (int i = 0; i < 100; i++)
+      data.push_back(i);
+    promObj->set_value(data);
+  };
+
+  std::promise<std::vector<int>> promiseObj;
+  std::future<std::vector<int>> futureObj = promiseObj.get_future();
+
+  std::cout << "start future inner thread..." << std::endl;
+  std::thread th(initiazer, &promiseObj);
+
+  auto data = futureObj.get();
+  std::cout << data.size() << std::endl;
+  for (auto &d : data) {
+    std::cout << d << std ::endl;
+  }
+  th.join();
 }
 
 int main() {
   auto n = std::thread::hardware_concurrency();
   std::cout << "thread hardware_concurrency: " << n << std::endl;
   std::cout << "this thread id: " << std::this_thread::get_id() << std::endl;
-  // give priority to other threads
-  // std::this_thread::yield();
-
-  test_condition_var();
-
+  test_device_status();
   return 0;
 }

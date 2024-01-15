@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "*.ipynb": "python",
-        "thread": "cpp"
+        "thread": "cpp",
+        "chrono": "cpp"
     }
 }
